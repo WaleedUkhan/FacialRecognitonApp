@@ -32,19 +32,20 @@ export default function Profile({ user }) {
     fetchProfilePicture();
   }, [user, imageURL]);
 
+  // In the handleImageChange function (around line 40)
   const handleImageChange = async (event) => {
     const file = event.target.files[0];
     if (!file) return;
-
+  
     if (file.size > 500 * 1024) {
       alert("File is too large. Maximum size is 500KB.");
       return;
     }
-
+  
     setIsUploading(true);
     try {
       const uploadedImageURL = await uploadImageToCloudinary(file);
-      await saveProfilePicture(uploadedImageURL, user?.userId);
+      await saveProfilePicture(uploadedImageURL, user?.id); // Use user?.id instead of user?.userId
       setImageURL(uploadedImageURL);
     } catch (error) {
       alert("Image upload failed.");

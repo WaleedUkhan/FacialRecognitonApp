@@ -10,30 +10,9 @@ export default function FaceAttendanceLayout() {
   const streamRef = useRef(null);
   const router = useRouter();
   const [isModelLoaded, setIsModelLoaded] = useState(false);
-  const [isFaceRegistered, setIsFaceRegistered] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isCameraActive, setIsCameraActive] = useState(false);
   const [modelLoadError, setModelLoadError] = useState(null);
-
-  const checkFaceRegistration = async () => {
-    try {
-      const response = await fetch('/api/face-recognition/check');
-      if (!response.ok) {
-        throw new Error('Failed to check face registration status');
-      }
-      const data = await response.json();
-      setIsFaceRegistered(data.hasRegisteredFace);
-      
-      // Redirect to registration page if face is not registered
-      if (!data.hasRegisteredFace) {
-        toast.info('You need to register your face first');
-        router.push('/user/face-registration');
-      }
-    } catch (error) {
-      console.error('Error checking face registration:', error);
-      toast.error('Error checking face registration status');
-    }
-  };
 
   const startCamera = async () => {
     try {
@@ -92,13 +71,13 @@ export default function FaceAttendanceLayout() {
     };
 
     initializeFaceAPI();
-    checkFaceRegistration();
   
     return () => {
       stopCamera();
     };
   }, []);
 
+  // In the handleMarkAttendance function
   const handleMarkAttendance = async () => {
     if (!isModelLoaded || isProcessing || !isCameraActive || modelLoadError) {
       if (modelLoadError) {
@@ -106,51 +85,42 @@ export default function FaceAttendanceLayout() {
       }
       return;
     }
-
+  
     setIsProcessing(true);
     try {
       const detection = await faceapi.detectSingleFace(
         videoRef.current,
         new faceapi.TinyFaceDetectorOptions()
       ).withFaceLandmarks().withFaceDescriptor();
-
+  
       if (!detection) {
         toast.error('No face detected. Please position your face in the frame.');
         setIsProcessing(false);
         return;
       }
-
-      // Create a canvas element and draw the video frame onto it
-      const canvas = document.createElement('canvas');
-      canvas.width = videoRef.current.videoWidth;
-      canvas.height = videoRef.current.videoHeight;
-      const ctx = canvas.getContext('2d');
-      ctx.drawImage(videoRef.current, 0, 0);
-      
-      // Get the image data from the canvas
-      const imageData = canvas.toDataURL('image/jpeg');
-
+  
+      // Send only the face descriptor to the server
       const response = await fetch('/api/face-recognition/verify', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          imageData
+          faceDescriptor: Array.from(detection.descriptor)
         })
       });
-
+  
       const data = await response.json();
       if (data.success) {
         toast.success('Attendance marked successfully!');
-        router.push('/user/viewRecords'); // Also update this path if needed
+        router.push('/user/viewRecord'); 
       } else {
-        toast.error(data.message || 'Failed to mark attendance');
+        if (data.message.includes('No face data registered')) {
+          toast.error('You need to register your face first. Please go to Face Registration page.');
+        } else {
+          toast.error(data.message || 'Failed to mark attendance');
+        }
       }
     } catch (error) {
       console.error('Error marking attendance:', error);
-      // Add this line to log the response if available
-      if (error.response) {
-        error.response.json().then(data => console.error('Error details:', data));
-      }
       toast.error('Error marking attendance');
     } finally {
       setIsProcessing(false);
@@ -201,7 +171,7 @@ export default function FaceAttendanceLayout() {
           <>
             <button
               onClick={handleMarkAttendance}
-              disabled={!isModelLoaded || isProcessing || !!modelLoadError || !isFaceRegistered}
+              disabled={!isModelLoaded || isProcessing || !!modelLoadError}
               className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 cursor-pointer"
             >
               {isProcessing ? 'Processing...' : 'Mark Attendance'}

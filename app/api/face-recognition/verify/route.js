@@ -3,6 +3,8 @@ import db from '@/lib/db';
 import jwt from 'jsonwebtoken';
 import * as faceapi from 'face-api.js';
 
+// Instead of processing the image on the server
+// Only receive the face descriptor from the client
 export async function POST(req) {
   try {
     // Get token from cookie
@@ -17,9 +19,9 @@ export async function POST(req) {
       return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
     }
 
-    const { imageData } = await req.json();
-    if (!imageData) {
-      return NextResponse.json({ success: false, message: 'No image data provided' }, { status: 400 });
+    const { faceDescriptor } = await req.json();
+    if (!faceDescriptor) {
+      return NextResponse.json({ success: false, message: 'No face descriptor provided' }, { status: 400 });
     }
 
     // Get user's face data from database
@@ -35,33 +37,17 @@ export async function POST(req) {
       );
     }
 
-    // Convert base64 image to buffer
-    const imageBuffer = Buffer.from(imageData.split(',')[1], 'base64');
-
-    // Load face-api models
-    await Promise.all([
-      faceapi.nets.tinyFaceDetector.loadFromUri('/models'),
-      faceapi.nets.faceLandmark68Net.loadFromUri('/models'),
-      faceapi.nets.faceRecognitionNet.loadFromUri('/models')
-    ]);
-
-    // Detect face in the captured image
-    const detection = await faceapi.detectSingleFace(imageBuffer)
-      .withFaceLandmarks()
-      .withFaceDescriptor();
-
-    if (!detection) {
-      return NextResponse.json(
-        { success: false, message: 'No face detected in the image' },
-        { status: 400 }
-      );
-    }
-
     // Compare with stored face data
     const storedFaceData = JSON.parse(user.face_data);
     // Convert the parsed array back to Float32Array
     const storedDescriptor = new Float32Array(storedFaceData);
-    const distance = faceapi.euclideanDistance(detection.descriptor, storedDescriptor);
+    
+    // Calculate Euclidean distance manually
+    let distance = 0;
+    for (let i = 0; i < faceDescriptor.length; i++) {
+      distance += Math.pow(faceDescriptor[i] - storedDescriptor[i], 2);
+    }
+    distance = Math.sqrt(distance);
 
     // If distance is less than threshold, consider it a match
     const threshold = 0.6;
@@ -94,12 +80,7 @@ export async function POST(req) {
 
     return NextResponse.json({ success: true, message: 'Attendance marked successfully' });
   } catch (error) {
-    // Add more logging statements
-    console.log('User face data retrieved:', !!user.face_data);
-    console.log('Face detection result:', !!detection);
-    console.log('Stored face data type:', typeof storedFaceData, Array.isArray(storedFaceData));
-    console.log('Detection descriptor type:', typeof detection.descriptor, detection.descriptor instanceof Float32Array);
-    console.log('Distance calculated:', distance, 'Threshold:', threshold);
+    console.error('Face verification error:', error);
     return NextResponse.json(
       { success: false, message: 'Error processing face recognition' },
       { status: 500 }
